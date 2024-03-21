@@ -3,19 +3,21 @@ use std::str::FromStr;
 use crate::dev_api::*;
 use bevy::prelude::*;
 
-#[derive(Resource)]
+#[derive(Resource, Default)]
 pub struct Gold(u64);
 
 /// Sets the player's gold to the provided value.
-#[derive(Reflect, Debug)]
-struct SetGold {
-    amount: u64,
+#[derive(Reflect, Debug, Default)]
+pub struct SetGold {
+    pub amount: u64,
 }
 
 impl bevy::ecs::world::Command for SetGold {
     fn apply(self, world: &mut World) {
         let mut current_gold = world.resource_mut::<Gold>();
         current_gold.0 = self.amount;
+
+        info!("Set gold to {}", current_gold.0);
     }
 }
 
@@ -38,9 +40,9 @@ impl FromStr for SetGold {
         }
 
         let Some(amount_string) = parts.next() else {
-            return Err(DevToolParseError::InvalidArgument("amount".to_string()));
+            return Err(DevToolParseError::InvalidToolData);
         };
-        let amount = amount_string.parse().map_err(|_| DevToolParseError::InvalidArgument("amount".to_string()))?;
+        let amount = amount_string.parse().map_err(|_| DevToolParseError::InvalidToolData)?;
 
         Ok(SetGold {amount} )
     }
