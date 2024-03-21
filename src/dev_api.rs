@@ -6,7 +6,7 @@ use bevy::reflect::TypeInfo;
 use bevy::{prelude::*, reflect::GetTypeRegistration};
 
 
-
+#[derive(Debug)]
 pub enum DevToolParseError {
     InvalidName,
     InvalidToolData,
@@ -19,7 +19,7 @@ pub enum DevToolParseError {
 /// and they can be enabled, disabled and reconfigured at runtime.
 /// 
 /// The documentation on this struct is reflected, and can be read by toolboxes to provide help text to users.
-pub trait ModalDevTool: Resource + Reflect + FromReflect + GetTypeRegistration + FromStr<Err=DevToolParseError> + Debug {
+pub trait ModalDevTool: Resource + Reflect + FromReflect + GetTypeRegistration + Default + FromStr<Err=DevToolParseError> + Debug {
     /// The name of this tool, as might be supplied by a command line interface.
     fn name() -> &'static str {
         Self::get_type_registration().type_info().type_path_table().short_path()
@@ -68,11 +68,11 @@ pub trait ModalDevTool: Resource + Reflect + FromReflect + GetTypeRegistration +
 }
 
 pub struct DevToolMetaData {
-    name: &'static str,
-    type_id: TypeId,
-    type_info: &'static TypeInfo,
-    from_str_fn: fn(&str) -> Result<Box<dyn Reflect>, DevToolParseError>,
-    short_description: Option<&'static str>
+    pub name: &'static str,
+    pub type_id: TypeId,
+    pub type_info: &'static TypeInfo,
+    pub from_str_fn: fn(&str) -> Result<Box<dyn Reflect>, DevToolParseError>,
+    pub short_description: Option<&'static str>
 }
 
 /// Dev commands are used by developers to modify the `World` in order to easily debug and test their application.
