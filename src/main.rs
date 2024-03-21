@@ -13,7 +13,7 @@ use bevy::{prelude::*, reflect::GetTypeRegistration};
 
 use dev_api::*;
 use rustyline::error::ReadlineError;
-use test_commands::{Gold, SetGold};
+use test_commands::{Gold, PrintGold, SetGold};
 
 #[derive(Resource, Deref, DerefMut)]
 struct Console(rustyline::DefaultEditor);
@@ -38,6 +38,7 @@ fn setup(
     mut toolbox: ResMut<CLIToolBox>,
 ) {
     toolbox.add_tool::<SetGold>();
+    toolbox.add_tool::<PrintGold>();
 
     toolbox.direct_applyer::<u64, _>();
 }
@@ -83,9 +84,10 @@ fn read_console(
 pub struct CLIToolBox {
     /// Metadata about all of the available dev commands.
     pub metadatas: HashMap<String, DevCommandMetadata>,
+    pub metadate_create_fn: HashMap<String, fn() -> DevCommandMetadata>,
+
 
     pub apply_from_string: Vec<fn(&mut dyn Reflect, &str) -> bool>,
-    pub metadate_create_fn: HashMap<String, fn() -> DevCommandMetadata>
 }
 
 /// Parse a command line input into a DevCommand
@@ -95,20 +97,27 @@ impl CLIToolBox {
         let metadata = T::metadata();
         info!("Added tool: {}", metadata.name);
 
-        self.metadate_create_fn.insert(metadata.name.to_string(), || T::metadata());
-        self.metadatas.insert(metadata.name.to_string(), metadata);
+        self.metadate_create_fn.insert(metadata.name.to_string().to_lowercase(), || T::metadata());
+        self.metadatas.insert(metadata.name.to_string().to_lowercase(), metadata);
     }
 
+    /// Add a direct applyer function to the toolbox.
+    ///
+    /// This function takes a command that implements `FromStr` and `Reflect`, and
+    /// allows us to parse a string into the target.
     pub fn direct_applyer<T: FromStr<Err=E> + Reflect, E>(&mut self) {
-        self.apply_from_string.push(|command: &mut dyn Reflect, value: &str| {
-            let Some(command) = command.downcast_mut::<T>() else {
+        self.apply_from_string.push(|target: &mut dyn Reflect, value: &str| {
+            let Some(target) = target.downcast_mut::<T>() else {
+                // Couldn't downcast to the provided type, return false.
                 return false;
             };
 
             if let Ok(value) = value.parse::<T>() {
-                *command = value;
+                // Parse was successful, set the command to the parsed value and return true.
+                *target = value;
                 true
             } else {
+                // Parse was not successful, return false.
                 false
             }
         })
@@ -128,133 +137,15 @@ impl CLIToolBox {
             return Err(DevToolParseError::InvalidName);
         }
 
-
-
         let name = words[0];
 
         // Look up the metadata for the command
-        let Some(metadata) = self.metadatas.get(name) else {
+        let Some(metadata) = self.metadatas.get(&name.to_lowercase()) else {
             error!("Unknown command: {}", name);
             return Err(DevToolParseError::InvalidName);
         };
 
         let mut command = (metadata.create_default_fn)();
-
-        let set_field_by_idx = |command: &mut dyn Reflect, idx: usize, value: &str| {
-            let field = match command.reflect_mut() {
-                bevy::reflect::ReflectMut::Struct(r) => {
-                    let Some(field) = r.field_at_mut(idx) else {
-                        error!("Invalid index: {}", idx);
-                        return Err(DevToolParseError::InvalidToolData);
-                    };
-                    field
-                },
-                bevy::reflect::ReflectMut::TupleStruct(r) => {
-                    let Some(field) = r.field_mut(idx) else {
-                        error!("Invalid index: {}", idx);
-                        return Err(DevToolParseError::InvalidToolData);
-                    };
-                    field
-                },
-                bevy::reflect::ReflectMut::Tuple(r) => {
-                    let Some(field) = r.field_mut(idx) else {
-                        error!("Invalid index: {}", idx);
-                        return Err(DevToolParseError::InvalidToolData);
-                    };
-                    field
-                },
-                bevy::reflect::ReflectMut::List(r) => {
-                    let Some(field) = r.get_mut(idx) else {
-                        error!("Invalid index: {}", idx);
-                        return Err(DevToolParseError::InvalidToolData);
-                    };
-                    field
-                },
-                bevy::reflect::ReflectMut::Array(r) => {
-                    let Some(field) = r.get_mut(idx) else {
-                        error!("Invalid index: {}", idx);
-                        return Err(DevToolParseError::InvalidToolData);
-                    };
-                    field
-                },
-                bevy::reflect::ReflectMut::Map(r) => {
-                    let Some(field) = r.get_at_mut(idx) else {
-                        error!("Invalid index: {}", idx);
-                        return Err(DevToolParseError::InvalidToolData);
-                    };
-                    field.1
-                },
-                bevy::reflect::ReflectMut::Enum(r) => {
-                    let Some(field) = r.field_at_mut(idx) else {
-                        error!("Invalid index: {}", idx);
-                        return Err(DevToolParseError::InvalidToolData);
-                    };
-                    field
-                },
-                bevy::reflect::ReflectMut::Value(r) => r,
-            };
-
-            for applyer in self.apply_from_string.iter() {
-                if applyer(field, value) {
-                    return Ok(());
-                }
-            }
-
-            error!("No applyer found for field: {}", name);
-            Err(DevToolParseError::InvalidToolData)
-        };
-
-        let set_field_by_name = |command: &mut dyn Reflect, name: &str, value: &str| {
-            let field = match command.reflect_mut() {
-                bevy::reflect::ReflectMut::Struct(r) => {
-                    let Some(field) = r.field_mut(name) else {
-                        error!("Invalid name: {}", name);
-                        return Err(DevToolParseError::InvalidToolData);
-                    };
-                    field
-                },
-                bevy::reflect::ReflectMut::TupleStruct(r) => {
-                    error!("Not support named fields in tuple structs: {}", name);
-                    return Err(DevToolParseError::InvalidToolData);
-                },
-                bevy::reflect::ReflectMut::Tuple(r) => {
-                    error!("Not support named fields in tuples: {}", name); 
-                    return Err(DevToolParseError::InvalidToolData);
-                },
-                bevy::reflect::ReflectMut::List(r) => {
-                    error!("Not support named fields in lists: {}", name);
-                    return Err(DevToolParseError::InvalidToolData);
-                },
-                bevy::reflect::ReflectMut::Array(r) => {
-                    error!("Not support named fields in arrays: {}", name);
-                    return Err(DevToolParseError::InvalidToolData);
-                },
-                bevy::reflect::ReflectMut::Map(r) => {
-                    error!("Not support named fields in maps: {}", name);
-                    return Err(DevToolParseError::InvalidToolData);
-                },
-                bevy::reflect::ReflectMut::Enum(r) => {
-                    let Some(field) = r.field_mut(name) else {
-                        error!("Invalid name: {}", name);
-                        return Err(DevToolParseError::InvalidToolData);
-                    };
-                    field
-                },
-                bevy::reflect::ReflectMut::Value(r) => {
-                    error!("Not support named fields in values: {}", name);
-                    return Err(DevToolParseError::InvalidToolData);
-                },
-            };
-
-            for applyer in self.apply_from_string.iter() {
-                if applyer(field, value) {
-                    return Ok(());
-                }
-            }
-
-            error!("No applyer found for field: {}", name);
-            Err(DevToolParseError::InvalidToolData)
-        };
         
         // The current named parameter being parsed
         let mut named_param = None;
@@ -263,24 +154,168 @@ impl CLIToolBox {
         // Index of the next parameter to expect in positional style
         let mut idx = 0;
 
+        // Parse all words following the command name
         for word in words.iter().skip(1) {
+            // Named style parameter
             if word.starts_with("--") {
                 is_named_style = true;
-                named_param = Some(word.to_string());
+                named_param = Some(word.trim_start_matches("--").to_string());
             } else {
+                // Positional style parameter
+
+                // Get the field to apply the value to
                 if is_named_style {
+                    // Retrieve the named parameter
                     let Some(named_param) = &named_param else {
-                        error!("Not fount name for value: {}", word);
+                        error!("Not found name for value: {}", word);
                         return Err(DevToolParseError::InvalidToolData);
                     };
-                    set_field_by_name(command.as_mut(), named_param, word)?;
+
+                    // Find the field with the matching name
+                    let Ok(field) = get_field_by_name(command.as_mut(), named_param) else {
+                        error!("Invalid name: {}", named_param);
+                        return Err(DevToolParseError::InvalidToolData);
+                    };
+
+                    // Apply the value to the field
+                    let mut ok = false;
+                    for applyer in self.apply_from_string.iter() {
+                        if applyer(field, &word) {
+                            ok = true;
+                            break;
+                        }
+                    }
+                    if !ok {
+                        error!("Not found applyer for value: {}", word);
+                        return Err(DevToolParseError::InvalidToolData);
+                    }
                 } else {
-                    set_field_by_idx(command.as_mut(), idx, word)?;
+                    // Find the next field in positional style
+                    let Ok(field) = get_field_by_idx(command.as_mut(), idx) else {
+                        error!("Invalid index: {}", idx);
+                        return Err(DevToolParseError::InvalidToolData);
+                    };
+
+                    // Apply the value to the field
+                    let mut ok = false;
+                    for applyer in self.apply_from_string.iter() {
+                        if applyer(field, &word) {
+                            ok = true;
+                            break;
+                        }
+                    }
+                    if !ok {
+                        error!("Not found applyer for value: {}", word);
+                        return Err(DevToolParseError::InvalidToolData);
+                    }
+
+                    // Increment the index of the next positional style parameter
                     idx += 1;
                 }
             }
         }
 
-        Ok((command, (self.metadate_create_fn[&metadata.name.to_string()])()))
+        // Return the command and its metadata
+        Ok((command, (self.metadate_create_fn[&metadata.name.to_lowercase()])()))
     }
+}
+
+fn get_field_by_idx<'a>(command: &'a mut dyn Reflect, idx: usize) -> Result<&'a mut dyn Reflect, DevToolParseError> {
+    let field = match command.reflect_mut() {
+        bevy::reflect::ReflectMut::Struct(r) => {
+            let Some(field) = r.field_at_mut(idx) else {
+                error!("Invalid index: {}", idx);
+                return Err(DevToolParseError::InvalidToolData);
+            };
+            field
+        },
+        bevy::reflect::ReflectMut::TupleStruct(r) => {
+            let Some(field) = r.field_mut(idx) else {
+                error!("Invalid index: {}", idx);
+                return Err(DevToolParseError::InvalidToolData);
+            };
+            field
+        },
+        bevy::reflect::ReflectMut::Tuple(r) => {
+            let Some(field) = r.field_mut(idx) else {
+                error!("Invalid index: {}", idx);
+                return Err(DevToolParseError::InvalidToolData);
+            };
+            field
+        },
+        bevy::reflect::ReflectMut::List(r) => {
+            let Some(field) = r.get_mut(idx) else {
+                error!("Invalid index: {}", idx);
+                return Err(DevToolParseError::InvalidToolData);
+            };
+            field
+        },
+        bevy::reflect::ReflectMut::Array(r) => {
+            let Some(field) = r.get_mut(idx) else {
+                error!("Invalid index: {}", idx);
+                return Err(DevToolParseError::InvalidToolData);
+            };
+            field
+        },
+        bevy::reflect::ReflectMut::Map(r) => {
+            let Some(field) = r.get_at_mut(idx) else {
+                error!("Invalid index: {}", idx);
+                return Err(DevToolParseError::InvalidToolData);
+            };
+            field.1
+        },
+        bevy::reflect::ReflectMut::Enum(r) => {
+            let Some(field) = r.field_at_mut(idx) else {
+                error!("Invalid index: {}", idx);
+                return Err(DevToolParseError::InvalidToolData);
+            };
+            field
+        },
+        bevy::reflect::ReflectMut::Value(r) => r,
+    };
+    Ok(field)
+}
+
+fn get_field_by_name<'a>(command: &'a mut dyn Reflect, name: &str) -> Result<&'a mut dyn Reflect, DevToolParseError> {
+    let field = match command.reflect_mut() {
+        bevy::reflect::ReflectMut::Struct(r) => {
+            let Some(field) = r.field_mut(name) else {
+                error!("Invalid name: {}", name);
+                return Err(DevToolParseError::InvalidToolData);
+            };
+            field
+        },
+        bevy::reflect::ReflectMut::TupleStruct(r) => {
+            error!("Not support named fields in tuple structs: {}", name);
+            return Err(DevToolParseError::InvalidToolData);
+        },
+        bevy::reflect::ReflectMut::Tuple(r) => {
+            error!("Not support named fields in tuples: {}", name); 
+            return Err(DevToolParseError::InvalidToolData);
+        },
+        bevy::reflect::ReflectMut::List(r) => {
+            error!("Not support named fields in lists: {}", name);
+            return Err(DevToolParseError::InvalidToolData);
+        },
+        bevy::reflect::ReflectMut::Array(r) => {
+            error!("Not support named fields in arrays: {}", name);
+            return Err(DevToolParseError::InvalidToolData);
+        },
+        bevy::reflect::ReflectMut::Map(r) => {
+            error!("Not support named fields in maps: {}", name);
+            return Err(DevToolParseError::InvalidToolData);
+        },
+        bevy::reflect::ReflectMut::Enum(r) => {
+            let Some(field) = r.field_mut(name) else {
+                error!("Invalid name: {}", name);
+                return Err(DevToolParseError::InvalidToolData);
+            };
+            field
+        },
+        bevy::reflect::ReflectMut::Value(r) => {
+            error!("Not support named fields in values: {}", name);
+            return Err(DevToolParseError::InvalidToolData);
+        },
+    };
+    Ok(field)
 }

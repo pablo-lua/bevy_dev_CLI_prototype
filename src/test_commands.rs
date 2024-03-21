@@ -47,3 +47,36 @@ impl FromStr for SetGold {
         Ok(SetGold {amount} )
     }
 }
+
+/// Sets the player's gold to the provided value.
+#[derive(Reflect, Debug, Default)]
+pub struct PrintGold;
+
+impl bevy::ecs::world::Command for PrintGold {
+    fn apply(self, world: &mut World) {
+        let gold = world.resource::<Gold>();
+        info!("Gold: {}", gold.0);
+    }
+}
+
+impl DevCommand for PrintGold {
+    fn short_description() -> Option<&'static str> {
+        Some("Prints the player's gold.")
+    }
+}
+
+impl FromStr for PrintGold {
+    type Err = DevToolParseError;
+    fn from_str(s: &str) -> Result<Self, DevToolParseError>{
+        let mut parts = s.split_whitespace();
+        //return error if name if none
+        let Some(name) = parts.next() else {
+            return Err(DevToolParseError::InvalidName);
+        };
+        if name != Self::name() {
+            return Err(DevToolParseError::InvalidName);
+        }
+
+        Ok(PrintGold)
+    }
+}
