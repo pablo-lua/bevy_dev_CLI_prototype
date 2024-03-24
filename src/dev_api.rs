@@ -80,6 +80,127 @@ pub trait ModalDevTool:
     }
 }
 
+pub trait ModalDevTl: Resource + Reflect + GetTypeRegistration + FromReflect {
+    fn name() -> &'static str {
+        Self::get_type_registration()
+            .type_info()
+            .type_path_table()
+            .short_path()
+    }
+
+    fn metadata() {
+
+    }
+}
+
+pub trait Toggleable: ModalDevTl {
+    fn is_enabled(&self) -> bool;
+
+    fn set_enabled(&mut self, enable: bool);
+
+    fn disable(&mut self) {
+        self.set_enabled(false);
+    }
+
+    fn enable(&mut self) {
+        self.set_enabled(true);
+    }
+
+    fn toggle(&mut self) {
+        if self.is_enabled() {
+            self.disable()
+        } else {
+            self.enable()
+        }
+    }
+}
+
+#[derive(Debug, Reflect)]
+pub struct Disable<T: Toggleable>(PhantomData<T>);
+impl <T: Toggleable>Command for Disable<T> {
+    fn apply(self, world: &mut World) {
+        if let Some(mut tool) = world.get_resource_mut::<T>() {
+            tool.disable()
+        } else {
+            warn!("Couldn't find {} in resources", T::name())
+        }
+    }
+}
+
+pub struct Enable<T: Toggleable>(PhantomData<T>);
+impl <T: Toggleable> Command for Enable<T> {
+    fn apply(self, world: &mut World) {
+        if let Some(mut tool) = world.get_resource_mut::<T>() {
+            tool.disable()
+        } else {
+            warn!("Couldn't find {} in resources", T::name())
+        }
+    }
+}
+
+pub struct Toggle<T: Toggleable>(PhantomData<T>);
+impl <T: Toggleable> Command for Toggle<T> {
+    fn apply(self, world: &mut World) {
+        if let Some(mut tool) = world.get_resource_mut::<T>() {
+            tool.toggle()
+        } else {
+            warn!("Couldn't find {} in resources", T::name())
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct ReflectToggle {
+    pub insert_enable: fn(&mut Commands),
+    pub insert_toggle: fn(&mut Commands),
+    pub insert_disable: fn(&mut Commands)
+}
+
+impl ReflectToggle {
+    pub fn toggle_from_world(&self, world: &mut World) {
+        let mut command_queue = CommandQueue::default();
+        let mut commands = Commands::new(&mut command_queue, world);
+        (self.insert_toggle)(&mut commands);
+        command_queue.apply(world);
+    }
+
+    pub fn enable_from_world(&self, world: &mut World) {
+        let mut command_queue = CommandQueue::default();
+        let mut commands = Commands::new(&mut command_queue, world);
+        (self.insert_enable)(&mut commands);
+        command_queue.apply(world);
+    }
+
+    pub fn disable_from_world(&self, world: &mut World) {
+        let mut command_queue = CommandQueue::default();
+        let mut commands = Commands::new(&mut command_queue, world);
+        (self.insert_disable)(&mut commands);
+        command_queue.apply(world);
+    }
+
+}
+
+impl <T: Reflect + Toggleable + FromReflect>FromType<T> for ReflectToggle {
+    fn from_type() -> Self {
+        ReflectToggle {
+            insert_disable: |commands: &mut Commands| {
+                let disable: Disable<T> = Disable(PhantomData);
+                commands.add(disable);
+            },
+
+            insert_enable: |commands: &mut Commands| {
+                let enable: Enable<T> = Enable(PhantomData);
+                commands.add(enable);
+            },
+
+            insert_toggle: |commands: &mut Commands| {
+                let toggle: Toggle<T> = Toggle(PhantomData);
+                commands.add(toggle);
+            }
+        }
+    }
+}
+
 pub struct DevToolMetaData {
     pub name: &'static str,
     pub type_id: TypeId,
