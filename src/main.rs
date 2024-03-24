@@ -19,20 +19,51 @@ use dev_api::*;
 use test_commands::{Gold, PrintGold, SetGold};
 
 fn main() {
-    let rl = rustyline::DefaultEditor::new().unwrap();
     App::new()
         .add_plugins(DefaultPlugins)
-        .insert_resource(Console(rl))
-        .add_systems(Update, read_console)
-        
-        //setup toolbox
-        .insert_resource(CLIToolBox::default())
+        .add_plugins(CLIToolPlugin)
         .add_systems(Startup, setup)
-
-        .insert_resource(Gold::default())
-
-        .insert_resource(test_tool::DevFlyCamera::default())
+        .add_systems(
+            Update,
+            update_terminal.run_if(|input_receiver: Res<SafeInput>| input_receiver.is_none()),
+        )
+        .add_systems(
+            Update, readed_lines
+        )
+        .init_resource::<CLIToolBox>()
+        .init_resource::<Gold>()
+        .init_resource::<DevFlyCamera>()
+        //setup toolbox
         .run();
+}
+
+// Asks for a new line when terminal is available
+fn update_terminal(console: ResMut<Console>, mut input_receiver: ResMut<SafeInput>) {
+    if input_receiver.is_none() {
+        console.read_new_line(&mut *input_receiver)
+    }
+}
+
+fn readed_lines(world: &mut World) {
+    let mut state: SystemState<EventReader<ReadedLine>> = SystemState::new(world);
+    let mut to_read_strings = Vec::new();
+    // Just avoiding borrow checker
+    {
+        let mut reader = state.get_mut(world);
+        for event in reader.read() {
+            let Ok(input) = event.0.clone() else {
+                continue;
+            };
+            to_read_strings.push(input);
+        }
+    }
+    if !to_read_strings.is_empty() {
+        world.resource_scope(|world: &mut World, cli_toolbox: Mut<CLIToolBox>| {
+            for input in to_read_strings.drain(0..to_read_strings.len()) {
+                cli_toolbox.parse_input(&input, world);
+            }
+        })
+    }
 }
 
 fn setup(mut toolbox: ResMut<CLIToolBox>) {
