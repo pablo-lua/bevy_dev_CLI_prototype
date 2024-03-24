@@ -29,7 +29,7 @@ impl DevCommand for SetGold {
 
 impl FromStr for SetGold {
     type Err = DevToolParseError;
-    fn from_str(s: &str) -> Result<Self, DevToolParseError>{
+    fn from_str(s: &str) -> Result<Self, DevToolParseError> {
         let mut parts = s.split_whitespace();
         //return error if name if none
         let Some(name) = parts.next() else {
@@ -42,9 +42,11 @@ impl FromStr for SetGold {
         let Some(amount_string) = parts.next() else {
             return Err(DevToolParseError::InvalidToolData);
         };
-        let amount = amount_string.parse().map_err(|_| DevToolParseError::InvalidToolData)?;
+        let amount = amount_string
+            .parse()
+            .map_err(|_| DevToolParseError::InvalidToolData)?;
 
-        Ok(SetGold {amount} )
+        Ok(SetGold { amount })
     }
 }
 
@@ -67,7 +69,7 @@ impl DevCommand for PrintGold {
 
 impl FromStr for PrintGold {
     type Err = DevToolParseError;
-    fn from_str(s: &str) -> Result<Self, DevToolParseError>{
+    fn from_str(s: &str) -> Result<Self, DevToolParseError> {
         let mut parts = s.split_whitespace();
         //return error if name if none
         let Some(name) = parts.next() else {

@@ -1,9 +1,9 @@
+use crate::dev_api::*;
 use bevy::prelude::*;
 use std::str::FromStr;
-use crate::dev_api::*;
 
 /// A flying camera controller that lets you disconnect your camera from the player to freely explore the environment.
-/// 
+///
 /// When this mode is disabled
 #[derive(Resource, Reflect, Debug)]
 pub struct DevFlyCamera {
@@ -19,7 +19,7 @@ impl Default for DevFlyCamera {
         DevFlyCamera {
             enabled: false,
             movement_speed: Some(3.),
-            turn_speed: Some(10.)
+            turn_speed: Some(10.),
         }
     }
 }
@@ -36,7 +36,7 @@ impl ModalDevTool for DevFlyCamera {
 
 impl FromStr for DevFlyCamera {
     type Err = DevToolParseError;
-    fn from_str(s: &str) -> Result<Self, DevToolParseError>{
+    fn from_str(s: &str) -> Result<Self, DevToolParseError> {
         todo!()
     }
 }
